@@ -219,8 +219,9 @@
   .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 4px; }
 
   /* DAY SELECTION */
-  .day-cell.day-start { background: var(--cal1-light) !important; outline: 2px solid var(--cal1); outline-offset: -2px; }
-  .day-cell.drag-selected { background: var(--cal1-light) !important; outline: 1px solid var(--cal1); outline-offset: -1px; }
+  .day-cell.day-start { background: var(--cal1) !important; }
+  .day-cell.day-start .day-num { color: white !important; background: transparent !important; }
+  .day-cell.drag-selected { background: var(--cal1-light) !important; }
   .days-grid { user-select: none; }
 
   @media (max-width: 700px) {
@@ -371,6 +372,10 @@
     <div class="modal-date" id="add-modal-date"></div>
     <label>Title</label>
     <input type="text" id="event-title" placeholder="Meeting title...">
+    <div class="time-row">
+      <div><label>Start date</label><input type="date" id="event-date-start" onchange="onDateRangeChange()"></div>
+      <div><label>End date</label><input type="date" id="event-date-end" onchange="onDateRangeChange()"></div>
+    </div>
     <div class="time-row">
       <div><label>Start time</label><input type="time" id="event-start"></div>
       <div><label>End time</label><input type="time" id="event-end"></div>
@@ -569,6 +574,7 @@
   function clearSelection() {
     clickStartDate = null;
     clearDragHighlight();
+    removeHoverListeners();
   }
 
   function navPrev() {
@@ -904,8 +910,10 @@
     selectedDate = dateStr;
     const [y,m,d] = dateStr.split('-');
     document.getElementById('modal-title').textContent = editEv ? 'Edit Meeting' : 'New Meeting';
-    document.getElementById('add-modal-date').textContent = SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(d)+', '+y+' · '+(currentCal===1?cal1Name:cal2Name);
+    document.getElementById('add-modal-date').textContent = (currentCal===1?cal1Name:cal2Name);
     document.getElementById('event-title').value = editEv ? editEv.title : '';
+    document.getElementById('event-date-start').value = editEv ? editEv.date : selectedDate;
+    document.getElementById('event-date-end').value = editEv ? editEv.date : (selectedDates.length > 1 ? selectedDates[selectedDates.length-1] : selectedDate);
     document.getElementById('event-start').value = editEv ? (editEv.time_start||'') : timeStr;
     document.getElementById('event-end').value = editEv ? (editEv.time_end||'') : '';
     document.getElementById('event-notes').value = editEv ? (editEv.notes||'') : '';
@@ -925,12 +933,41 @@
     setTimeout(()=>document.getElementById('event-title').focus(),100);
   }
 
+  function onDateRangeChange() {
+    const s = document.getElementById('event-date-start').value;
+    const e = document.getElementById('event-date-end').value;
+    if (!s || !e) return;
+    // Build array of all dates between start and end
+    const dates = [];
+    let cur = new Date(s + 'T00:00:00');
+    const end = new Date(e + 'T00:00:00');
+    if (cur > end) {
+      // Swap if end < start
+      document.getElementById('event-date-end').value = s;
+      document.getElementById('event-date-start').value = e;
+      cur = new Date(e + 'T00:00:00');
+    }
+    while (cur <= end) {
+      dates.push(fmtDate(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    selectedDate = dates[0];
+    selectedDates = dates;
+    // Update the subtitle
+    const fmt = (d) => { const [y,m,day] = d.split('-'); return SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(day)+', '+y; };
+    document.getElementById('add-modal-date').textContent =
+      dates.length === 1 ? fmt(dates[0]) + ' · ' + (currentCal===1?cal1Name:cal2Name)
+      : fmt(dates[0]) + ' – ' + fmt(dates[dates.length-1]) + ' (' + dates.length + ' days) · ' + (currentCal===1?cal1Name:cal2Name);
+  }
+
   function closeModal() { document.getElementById('add-modal').classList.remove('open'); editingEventId=null; }
 
   async function saveEvent() {
     const title = document.getElementById('event-title').value.trim();
     if (!title) { document.getElementById('event-title').focus(); return; }
     const btn = document.getElementById('save-btn'); btn.disabled=true; btn.textContent='Saving...';
+    // Rebuild selectedDates from date inputs in case user typed manually
+    onDateRangeChange();
     const payload = {
       calendar_id: currentCal, title, date: selectedDate,
       time_start: document.getElementById('event-start').value||null,
@@ -1058,62 +1095,70 @@
     } catch(e) { console.error('Email error:', e); }
   }
 
-  // ── DRAG & CLICK SELECTION ────────────────────────────────────────────────
+  // ── SELECTION (click-to-start, hover-preview, click-to-confirm) ──────────
   function startDrag(dateStr, e) {
+    // Drag mode — click and hold
     isDragging = true; dragMoved = false;
     dragStartDate = dateStr; dragEndDate = dateStr;
     e.preventDefault();
   }
 
   function updateDrag(dateStr) {
-    if (!isDragging) return;
-    dragMoved = true;
-    dragEndDate = dateStr;
-    highlightDragRange();
+    if (isDragging && !clickStartDate) {
+      // Drag mode
+      dragMoved = true;
+      dragEndDate = dateStr;
+      highlightRange(dragStartDate, dateStr);
+    } else if (clickStartDate) {
+      // Click mode — preview range on hover
+      highlightRange(clickStartDate, dateStr);
+    }
   }
 
   function endDrag() {
     if (!isDragging) return;
     isDragging = false;
-    if (!dragMoved) return; // let onclick handle single clicks
-    const dates = getDragDates();
+    if (!dragMoved) return; // let onclick handle
+    const dates = getRangeDates(dragStartDate, dragEndDate);
     clearDragHighlight();
     clickStartDate = null;
-    if (dates.length === 1) {
-      openDayPanel(dates[0]);
-    } else {
-      openAddModalMultiDay(dates);
-    }
+    if (dates.length === 1) openDayPanel(dates[0]);
+    else openAddModalMultiDay(dates);
   }
 
   function handleDayClick(dateStr, e) {
-    if (dragMoved) { dragMoved = false; return; } // drag already handled
+    if (dragMoved) { dragMoved = false; return; }
 
     if (!clickStartDate) {
-      // First click — set start date
+      // First click — set start, begin hover preview
       clickStartDate = dateStr;
-      clearDragHighlight();
-      // highlight start cell
+      highlightRange(dateStr, dateStr);
+      // attach hover listeners to all cells
       document.querySelectorAll('#days-grid .day-cell[data-date]').forEach(c => {
-        c.classList.toggle('day-start', c.dataset.date === dateStr);
+        c._hoverFn = () => updateDrag(c.dataset.date);
+        c.addEventListener('mouseenter', c._hoverFn);
       });
     } else if (clickStartDate === dateStr) {
-      // Clicked same day — open day panel
+      // Clicked same day — cancel selection, open day panel
       clickStartDate = null;
       clearDragHighlight();
+      removeHoverListeners();
       openDayPanel(dateStr);
     } else {
-      // Second click — open multi-day form
-      const allDates = Array.from(document.querySelectorAll('#days-grid .day-cell[data-date]')).map(c => c.dataset.date);
-      const i1 = allDates.indexOf(clickStartDate);
-      const i2 = allDates.indexOf(dateStr);
-      const start = Math.min(i1, i2), end = Math.max(i1, i2);
-      const dates = allDates.slice(start, end + 1);
+      // Second click — confirm range
+      const dates = getRangeDates(clickStartDate, dateStr);
       clickStartDate = null;
       clearDragHighlight();
+      removeHoverListeners();
       if (dates.length === 1) openDayPanel(dates[0]);
       else openAddModalMultiDay(dates);
     }
+  }
+
+  function removeHoverListeners() {
+    document.querySelectorAll('#days-grid .day-cell[data-date]').forEach(c => {
+      if (c._hoverFn) { c.removeEventListener('mouseenter', c._hoverFn); delete c._hoverFn; }
+    });
   }
 
   function getDragDates() {
@@ -1126,29 +1171,43 @@
     return allDates.slice(start, end + 1);
   }
 
-  function highlightDragRange() {
-    const dates = new Set(getDragDates());
-    document.querySelectorAll('#days-grid .day-cell[data-date]').forEach(c => {
-      c.classList.toggle('drag-selected', dates.has(c.dataset.date));
-      c.classList.remove('day-start');
+  function getRangeDates(start, end) {
+    const allDates = Array.from(document.querySelectorAll('#days-grid .day-cell[data-date]')).map(c => c.dataset.date);
+    const i1 = allDates.indexOf(start), i2 = allDates.indexOf(end);
+    if (i1 < 0 || i2 < 0) return [start];
+    const s = Math.min(i1,i2), e = Math.max(i1,i2);
+    return allDates.slice(s, e+1);
+  }
+
+  function highlightRange(start, end) {
+    const dates = new Set(getRangeDates(start, end));
+    const allCells = Array.from(document.querySelectorAll('#days-grid .day-cell[data-date]'));
+    allCells.forEach(c => {
+      const inRange = dates.has(c.dataset.date);
+      const isStart = c.dataset.date === start;
+      const isEnd = c.dataset.date === end || (start === end && isStart);
+      c.classList.toggle('drag-selected', inRange && !isStart && !isEnd);
+      c.classList.toggle('day-start', inRange && (isStart || isEnd));
     });
   }
 
   function clearDragHighlight() {
     document.querySelectorAll('#days-grid .day-cell').forEach(c => {
-      c.classList.remove('drag-selected');
-      c.classList.remove('day-start');
+      c.classList.remove('drag-selected', 'day-start');
     });
   }
+
+  // Keep getDragDates for drag mode compatibility
+  function getDragDates() { return getRangeDates(dragStartDate, dragEndDate); }
 
   function openAddModalMultiDay(dates) {
     selectedDate = dates[0];
     selectedDates = dates;
-    const fmt = (d) => { const [y,m,day] = d.split('-'); return SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(day); };
     document.getElementById('modal-title').textContent = 'New Meeting';
-    document.getElementById('add-modal-date').textContent =
-      fmt(dates[0]) + ' – ' + fmt(dates[dates.length-1]) + ' (' + dates.length + ' days) · ' + (currentCal===1?cal1Name:cal2Name);
+    document.getElementById('add-modal-date').textContent = currentCal===1?cal1Name:cal2Name;
     document.getElementById('event-title').value = '';
+    document.getElementById('event-date-start').value = dates[0];
+    document.getElementById('event-date-end').value = dates[dates.length-1];
     document.getElementById('event-start').value = '';
     document.getElementById('event-end').value = '';
     document.getElementById('event-notes').value = '';
