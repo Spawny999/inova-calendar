@@ -626,69 +626,43 @@
       gridDates.push(fmtDate(cellDate));
     }
 
-    // Figure out which events span multiple dates (saved across consecutive dates)
     const calEvs = events.filter(e => e.calendar_id === currentCal);
-    // Group events by title+time to detect multi-day spans
-    const multiDayGroups = {};
-    calEvs.forEach(ev => {
-      const key = ev.title + '|' + (ev.time_start||'') + '|' + (ev.creator||'') + '|' + (ev.color||'');
-      if (!multiDayGroups[key]) multiDayGroups[key] = [];
-      multiDayGroups[key].push(ev.date);
-    });
-    // Find consecutive date spans
-    const spans = []; // {dates:[], ev}
-    const usedIds = new Set();
-    Object.values(multiDayGroups).forEach(dates => {
-      dates.sort();
-      // Find consecutive runs
-      let run = [dates[0]];
-      for (let i = 1; i < dates.length; i++) {
-        const prev = new Date(dates[i-1]+'T00:00:00');
-        const cur = new Date(dates[i]+'T00:00:00');
-        const diff = (cur - prev) / 86400000;
-        if (diff === 1) { run.push(dates[i]); }
-        else { if (run.length > 1) spans.push(run); run = [dates[i]]; }
-      }
-      if (run.length > 1) spans.push(run);
-    });
-    const spanDateSets = spans.map(s => new Set(s));
-    const multiDayDates = new Set(spans.flat());
+
+    // Separate multi-day (have date_end) from single-day events
+    const multiEvs = calEvs.filter(e => e.date_end && e.date_end > e.date);
+    const singleEvs = calEvs.filter(e => !e.date_end || e.date_end <= e.date);
 
     // Build cells
-    const cells = [];
     for (let i = 0; i < totalCells; i++) {
       const cellDate = new Date(year, month, i - startDow + 1);
       const dateStr = gridDates[i];
       const isCurrentMonth = cellDate.getMonth() === month;
-      const dayEvs = calEvs.filter(e => e.date === dateStr);
       const cell = document.createElement('div');
       cell.className = 'day-cell' + (!isCurrentMonth ? ' other-month' : '') + (dateStr === todayStr ? ' today' : '');
       cell.innerHTML = '<div class="day-num">' + cellDate.getDate() + '</div>';
 
-      // Render multi-day bars first
-      const shownMulti = new Set();
-      spans.forEach((spanDates, si) => {
-        if (!spanDates.includes(dateStr)) return;
-        const repEv = calEvs.find(e => e.date === dateStr && spanDateSets[si].has(e.date) &&
-          spans[si].some(sd => calEvs.find(ev2 => ev2.date === sd && ev2.title === e.title)));
-        if (!repEv || shownMulti.has(si)) return;
-        shownMulti.add(si);
-        const isStart = spanDates[0] === dateStr;
-        const isEnd = spanDates[spanDates.length-1] === dateStr;
+      let shown = 0;
+
+      // Render multi-day bars
+      multiEvs.forEach(ev => {
+        if (dateStr < ev.date || dateStr > ev.date_end) return;
+        if (shown >= 3) return;
+        const isStart = dateStr === ev.date;
+        const isEnd = dateStr === ev.date_end;
         const bar = document.createElement('div');
-        bar.className = 'event-bar' + (isStart ? ' bar-start' : '') + (isEnd ? ' bar-end' : '') + (!isStart && !isEnd ? ' bar-middle' : '');
-        bar.style.background = hexAlpha(repEv.color || EVENT_COLORS[0], 0.25);
-        bar.style.color = repEv.color || EVENT_COLORS[0];
-        bar.textContent = isStart ? repEv.title : ' ';
-        bar.onclick = e => { e.stopPropagation(); showEventDetail(repEv); };
+        bar.className = 'event-bar' +
+          (isStart && isEnd ? ' bar-start bar-end' : isStart ? ' bar-start' : isEnd ? ' bar-end' : ' bar-middle');
+        bar.style.background = hexAlpha(ev.color || EVENT_COLORS[0], 0.25);
+        bar.style.color = ev.color || EVENT_COLORS[0];
+        bar.textContent = isStart ? ev.title : ' ';
+        bar.onclick = e => { e.stopPropagation(); showEventDetail(ev); };
         cell.appendChild(bar);
+        shown++;
       });
 
       // Render single-day events as pills
-      const singleEvs = dayEvs.filter(e => !multiDayDates.has(e.date) ||
-        !spans.some(s => s.includes(e.date) && s.length > 1));
-      let shown = shownMulti.size;
-      singleEvs.slice(0, Math.max(0, 3 - shown)).forEach(ev => {
+      const dayEvs = singleEvs.filter(e => e.date === dateStr);
+      dayEvs.slice(0, Math.max(0, 3 - shown)).forEach(ev => {
         const pill = document.createElement('div');
         pill.className = 'event-pill';
         pill.style.background = hexAlpha(ev.color || EVENT_COLORS[0], 0.15);
@@ -698,10 +672,11 @@
         cell.appendChild(pill);
         shown++;
       });
-      const remaining = dayEvs.length - shown;
-      if (remaining > 0) {
+
+      const totalDay = multiEvs.filter(e => dateStr >= e.date && dateStr <= e.date_end).length + dayEvs.length;
+      if (totalDay > shown) {
         const m = document.createElement('div'); m.className = 'more-events';
-        m.textContent = '+' + remaining + ' more'; cell.appendChild(m);
+        m.textContent = '+' + (totalDay - shown) + ' more'; cell.appendChild(m);
       }
       cell.dataset.date = dateStr;
       cell.onmousedown = (e) => { if (e.button !== 0) return; startDrag(dateStr, e); };
@@ -984,7 +959,7 @@
     document.getElementById('add-modal-date').textContent = (currentCal===1?cal1Name:cal2Name);
     document.getElementById('event-title').value = editEv ? editEv.title : '';
     document.getElementById('event-date-start').value = editEv ? editEv.date : selectedDate;
-    document.getElementById('event-date-end').value = editEv ? editEv.date : selectedDate;
+    document.getElementById('event-date-end').value = editEv ? (editEv.date_end || editEv.date) : selectedDate;
     selectedDates = [selectedDate]; // always reset to single day
     document.getElementById('event-start').value = editEv ? (editEv.time_start||'') : timeStr;
     document.getElementById('event-end').value = editEv ? (editEv.time_end||'') : '';
@@ -1050,23 +1025,25 @@
     };
     try {
       if (editingEventId) {
-        const res = await sbFetch('PATCH','events?id=eq.'+editingEventId, payload);
+        const dateEnd = document.getElementById('event-date-end').value;
+        const patchPayload = Object.assign({}, payload, {
+          date_end: (dateEnd && dateEnd !== selectedDate) ? dateEnd : null
+        });
+        const res = await sbFetch('PATCH','events?id=eq.'+editingEventId, patchPayload);
         if (!res.ok) throw new Error('Failed to update');
         await loadEvents();
       } else {
-        const datesToSave = selectedDates.length > 1 ? selectedDates : [selectedDate];
-        let lastSaved = null;
-        for (const d of datesToSave) {
-          const p = Object.assign({}, payload, { date: d });
-          const res = await sbFetch('POST','events',p);
-          if (!res.ok) throw new Error('Failed to save');
-          const [saved] = await res.json();
-          events.push(saved);
-          lastSaved = saved;
-        }
+        const dateEnd = document.getElementById('event-date-end').value;
+        const p = Object.assign({}, payload, {
+          date_end: (dateEnd && dateEnd !== selectedDate) ? dateEnd : null
+        });
+        const res = await sbFetch('POST','events',p);
+        if (!res.ok) throw new Error('Failed to save');
+        const [saved] = await res.json();
+        events.push(saved);
         events.sort((a,b)=>a.date.localeCompare(b.date)||(a.time_start||'').localeCompare(b.time_start||''));
         const emailList = attendees.filter(a=>a.email).map(a=>a.email);
-        if (emailList.length > 0 && lastSaved) sendMeetingEmails(lastSaved, emailList);
+        if (emailList.length > 0) sendMeetingEmails(saved, emailList);
         selectedDates = [];
       }
       closeModal(); renderView();
@@ -1116,7 +1093,9 @@
     titleEl.style.cssText='border-left:3px solid '+(ev.color||EVENT_COLORS[0])+';padding-left:10px';
     const [y,m,d]=ev.date.split('-');
     const dateStr=SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(d)+', '+y;
-    let html='<div class="event-meta-row"><span class="event-meta-icon">📅</span><span>'+dateStr+'</span></div>';
+    const dateEndStr = ev.date_end && ev.date_end !== ev.date ?
+      (() => { const [y2,m2,d2]=ev.date_end.split('-'); return ' – '+SHORT_MONTHS[parseInt(m2)-1]+' '+parseInt(d2)+', '+y2; })() : '';
+    let html='<div class="event-meta-row"><span class="event-meta-icon">📅</span><span>'+dateStr+dateEndStr+'</span></div>';
     if(ev.time_start){
       let t=ev.time_start.slice(0,5); if(ev.time_end)t+=' – '+ev.time_end.slice(0,5);
       html+='<div class="event-meta-row"><span class="event-meta-icon">🕐</span><span>'+t+'</span></div>';
