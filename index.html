@@ -426,6 +426,7 @@
   const DAYS_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
   let supabaseUrl = SUPABASE_URL, supabaseKey = SUPABASE_KEY;
+  let employees = []; // loaded from Supabase employees table
   let cal1Name = CAL1_NAME, cal2Name = CAL2_NAME;
   let currentCal = 1, currentView = 'month';
   let currentDate = new Date();
@@ -527,7 +528,7 @@
     document.getElementById('loading').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     updateSaveBtn();
-    await loadEvents();
+    await Promise.all([loadEvents(), loadEmployees()]);
     renderView();
     requestNotifPerm();
     pollInterval = setInterval(async () => {
@@ -730,21 +731,73 @@
     });
   }
 
+  async function loadEmployees() {
+    try {
+      const res = await sbFetch('GET', 'employees?order=name.asc');
+      if (res.ok) employees = await res.json();
+    } catch {}
+  }
+
   function setupAttendeeInput() {
     const input = document.getElementById('attendee-input');
+
+    // Create autocomplete dropdown
+    const dropdown = document.createElement('div');
+    dropdown.id = 'attendee-dropdown';
+    dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.12);z-index:999;max-height:200px;overflow-y:auto;display:none;';
+    document.getElementById('attendee-tags').parentElement.style.position = 'relative';
+    document.getElementById('attendee-tags').parentElement.appendChild(dropdown);
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { dropdown.style.display = 'none'; return; }
+      const matches = employees.filter(e =>
+        e.name.toLowerCase().includes(q) && !attendees.find(a => a.name === e.name)
+      ).slice(0, 6);
+      if (!matches.length) { dropdown.style.display = 'none'; return; }
+      dropdown.innerHTML = '';
+      matches.forEach(emp => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background 0.1s;';
+        item.innerHTML = '<strong>' + escHtml(emp.name) + '</strong> <span style="color:var(--text-muted);font-size:11px;">' + escHtml(emp.email) + '</span>';
+        item.onmouseenter = () => item.style.background = 'var(--bg)';
+        item.onmouseleave = () => item.style.background = 'white';
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          addAttendeeTag(emp.name, emp.email);
+          input.value = '';
+          dropdown.style.display = 'none';
+        };
+        dropdown.appendChild(item);
+      });
+      dropdown.style.display = 'block';
+    });
+
     input.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { dropdown.style.display = 'none'; }
       if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
-        e.preventDefault(); addAttendeeTag(input.value.trim()); input.value = '';
+        e.preventDefault();
+        // Try to match from employees first
+        const q = input.value.trim().toLowerCase();
+        const match = employees.find(emp => emp.name.toLowerCase() === q);
+        if (match) addAttendeeTag(match.name, match.email);
+        else addAttendeeTag(input.value.trim(), null);
+        input.value = '';
+        dropdown.style.display = 'none';
       }
       if (e.key === 'Backspace' && !input.value && attendees.length > 0) {
         removeAttendee(attendees.length-1);
       }
     });
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => { dropdown.style.display = 'none'; }, 150);
+    });
   }
 
-  function addAttendeeTag(name) {
-    if (!name || attendees.includes(name)) return;
-    attendees.push(name);
+  function addAttendeeTag(name, email) {
+    if (!name || attendees.find(a => a.name === name)) return;
+    attendees.push({ name, email });
     renderAttendeeTags();
   }
 
@@ -759,7 +812,8 @@
     wrap.innerHTML = '';
     attendees.forEach((a, i) => {
       const tag = document.createElement('div'); tag.className = 'attendee-tag';
-      tag.innerHTML = '<span>'+escHtml(a)+'</span><button class="attendee-tag-remove" onclick="removeAttendee('+i+')">×</button>';
+      const hasEmail = a.email ? ' title="'+escHtml(a.email)+'"' : '';
+      tag.innerHTML = '<span'+hasEmail+'>'+escHtml(a.name)+'</span><button class="attendee-tag-remove" onclick="removeAttendee('+i+')">×</button>';
       wrap.appendChild(tag);
     });
     wrap.appendChild(input);
@@ -835,7 +889,15 @@
     document.getElementById('event-end').value = editEv ? (editEv.time_end||'') : '';
     document.getElementById('event-notes').value = editEv ? (editEv.notes||'') : '';
     selectedColor = editEv ? (editEv.color||EVENT_COLORS[0]) : (currentCal===1?EVENT_COLORS[0]:EVENT_COLORS[1]);
-    attendees = editEv && editEv.attendees ? editEv.attendees.split(',').filter(Boolean) : [];
+    // Restore attendees as objects, matching names to employee emails where possible
+    if (editEv && editEv.attendees) {
+      attendees = editEv.attendees.split(',').filter(Boolean).map(name => {
+        const emp = employees.find(e => e.name === name.trim());
+        return { name: name.trim(), email: emp ? emp.email : null };
+      });
+    } else {
+      attendees = [];
+    }
     buildColorSwatches(); renderAttendeeTags();
     document.getElementById('save-btn').textContent = editEv ? 'Update Meeting' : 'Save Meeting';
     document.getElementById('add-modal').classList.add('open');
@@ -854,7 +916,7 @@
       time_end: document.getElementById('event-end').value||null,
       notes: document.getElementById('event-notes').value.trim()||null,
       color: selectedColor, creator: currentUser,
-      attendees: attendees.join(',')
+      attendees: attendees.map(a=>a.name).join(',')
     };
     try {
       if (editingEventId) {
@@ -866,6 +928,11 @@
         if (!res.ok) throw new Error('Failed to save');
         const [saved] = await res.json(); events.push(saved);
         events.sort((a,b)=>a.date.localeCompare(b.date)||(a.time_start||'').localeCompare(b.time_start||''));
+        // Send email notifications to attendees with known emails
+        const emailList = attendees.filter(a=>a.email).map(a=>a.email);
+        if (emailList.length > 0) {
+          sendMeetingEmails(saved, emailList);
+        }
       }
       closeModal(); renderView();
     } catch(e) { alert('Error: '+e.message); }
@@ -939,6 +1006,31 @@
       if(!res.ok)throw new Error('Failed');
       events=events.filter(e=>e.id!==selectedEventId); closeDetailModal(); renderView();
     } catch(e){alert('Error: '+e.message);}
+  }
+
+  // ── EMAIL ─────────────────────────────────────────────────────────────────
+  async function sendMeetingEmails(ev, emailList) {
+    try {
+      const calName = ev.calendar_id===1 ? cal1Name : cal2Name;
+      await fetch(supabaseUrl+'/functions/v1/send-meeting-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer '+supabaseKey,
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify({
+          title: ev.title,
+          date: ev.date,
+          time_start: ev.time_start,
+          time_end: ev.time_end,
+          notes: ev.notes,
+          creator: ev.creator,
+          attendee_emails: emailList,
+          calendar_name: calName,
+        })
+      });
+    } catch(e) { console.error('Email error:', e); }
   }
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
