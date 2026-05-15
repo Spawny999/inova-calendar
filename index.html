@@ -97,12 +97,12 @@
   .event-pill:hover { opacity: 0.75; }
   .more-events { font-size: 10px; color: var(--text-muted); font-weight: 500; padding: 2px 4px; }
   /* MULTI-DAY BARS */
-  .event-bar { font-size: 11px; font-weight: 500; padding: 3px 7px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: opacity 0.15s; width: calc(100% + 1px); box-sizing: border-box; display: block; position: relative; z-index: 1; border-radius: 0; margin-left: -8px; margin-right: -8px; padding-left: 10px; }
+  .event-bar { font-size: 11px; font-weight: 500; padding: 2px 6px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: opacity 0.15s; display: block; box-sizing: border-box; border-radius: 0; margin-left: -9px; width: calc(100% + 18px); }
   .event-bar:hover { opacity: 0.8; }
-  .event-bar.bar-start { border-radius: 4px 0 0 4px; margin-left: 2px; }
-  .event-bar.bar-end { border-radius: 0 4px 4px 0; width: calc(100% + 9px); }
-  .event-bar.bar-start.bar-end { border-radius: 4px; margin-left: 2px; width: calc(100% - 4px); }
-  .event-bar.bar-middle { }
+  .event-bar.bar-start { border-radius: 12px 0 0 12px; margin-left: 2px; width: calc(100% + 7px); }
+  .event-bar.bar-end { border-radius: 0 12px 12px 0; margin-left: -9px; width: calc(100% + 9px); }
+  .event-bar.bar-start.bar-end { border-radius: 12px; margin-left: 2px; width: calc(100% - 4px); }
+  .event-bar.bar-middle { margin-left: -9px; width: calc(100% + 18px); }
 
   /* WEEK VIEW */
   #week-view { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
@@ -649,12 +649,15 @@
         if (shown >= 3) return;
         const isStart = dateStr === ev.date;
         const isEnd = dateStr === ev.date_end;
+        const dow = new Date(dateStr + 'T00:00:00').getDay();
+        const isRowStart = dow === 1 || isStart;
+        const isRowEnd = dow === 0 || isEnd;
         const bar = document.createElement('div');
         bar.className = 'event-bar' +
-          (isStart && isEnd ? ' bar-start bar-end' : isStart ? ' bar-start' : isEnd ? ' bar-end' : ' bar-middle');
-        bar.style.background = hexAlpha(ev.color || EVENT_COLORS[0], 0.25);
+          (isRowStart && isRowEnd ? ' bar-start bar-end' : isRowStart ? ' bar-start' : isRowEnd ? ' bar-end' : ' bar-middle');
+        bar.style.background = hexAlpha(ev.color || EVENT_COLORS[0], 0.3);
         bar.style.color = ev.color || EVENT_COLORS[0];
-        bar.textContent = isStart ? ev.title : ' ';
+        bar.textContent = (isStart || isRowStart) ? ev.title : ' ';
         bar.onclick = e => { e.stopPropagation(); showEventDetail(ev); };
         cell.appendChild(bar);
         shown++;
