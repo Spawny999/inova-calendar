@@ -394,8 +394,8 @@
     </div>
     <div id="detail-body"></div>
     <div class="detail-actions">
-      <button class="btn-edit" onclick="editCurrentEvent()">✏️ Edit</button>
-      <button class="btn-delete" onclick="deleteEvent()">Delete</button>
+      <button class="btn-edit" id="btn-edit" onclick="editCurrentEvent()">✏️ Edit</button>
+      <button class="btn-delete" id="btn-delete" onclick="deleteEvent()">Delete</button>
       <button class="btn-cancel" onclick="closeDetailModal()">Close</button>
     </div>
   </div>
@@ -413,11 +413,11 @@
 </div>
 
 <script>
-  // ── CONFIGURE THESE ONCE, THEN DISTRIBUTE THIS FILE ──────────────────────
-  const SUPABASE_URL = 'https://oeazypifnqcgqyusdfva.supabase.co';   // e.g. https://xxxx.supabase.co
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lYXp5cGlmbnFjZ3F5dXNkZnZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MzQ5NjQsImV4cCI6MjA5NDMxMDk2NH0.1aIRfiK7HsZeliwIRJUpbAgMEUZ5UJx6QO2s7-NE-n0';
-  const CAL1_NAME    = 'Состаноци во meeting room';           // rename as you like
-  const CAL2_NAME    = 'Службени отсуства';           // rename as you like
+  // ── CONFIGURE THESE ONCE, THEN DISTRIBUTE ─────────────────────────────────
+  const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+  const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+  const CAL1_NAME    = 'Calendar 1';
+  const CAL2_NAME    = 'Calendar 2';
   // ─────────────────────────────────────────────────────────────────────────
 
   const EVENT_COLORS = ['#2d5a3d','#3d3068','#c9453a','#b07d2a','#1a6b8a','#7a3d8a','#3a7a4a','#8a5a3a'];
@@ -924,6 +924,9 @@
     if(attendeeList.length) html+='<div class="event-meta-row"><span class="event-meta-icon">👥</span><span>'+attendeeList.map(escHtml).join(', ')+'</span></div>';
     if(ev.notes) html+='<div class="event-meta-row"><span class="event-meta-icon">📝</span><span>'+escHtml(ev.notes)+'</span></div>';
     document.getElementById('detail-body').innerHTML=html;
+    const isOwner = ev.creator === currentUser;
+    document.getElementById('btn-edit').style.display = isOwner ? '' : 'none';
+    document.getElementById('btn-delete').style.display = isOwner ? '' : 'none';
     document.getElementById('detail-modal').classList.add('open');
   }
 
