@@ -144,12 +144,12 @@
 
   /* ATTENDEE TAGS */
   .attendee-input-wrap { position: relative; margin-bottom: 12px; }
-  .attendee-tags { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-height: 42px; cursor: text; transition: border-color 0.2s; }
+  .attendee-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); min-height: 42px; cursor: text; transition: border-color 0.2s; }
   .attendee-tags:focus-within { border-color: var(--cal1); }
-  .attendee-tag { display: flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 3px 8px 3px 10px; font-size: 12px; font-weight: 500; }
+  .attendee-tag { display: inline-flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 3px 8px 3px 10px; font-size: 12px; font-weight: 500; white-space: nowrap; }
   .attendee-tag-remove { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 0; display: flex; align-items: center; }
   .attendee-tag-remove:hover { color: var(--accent); }
-  .attendee-tag-input { border: none; background: transparent; outline: none; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--text); min-width: 120px; flex: 1; }
+  .attendee-tag-input { border: none; background: transparent; outline: none; font-family: 'DM Sans', sans-serif; font-size: 13px; color: var(--text); min-width: 100px; width: auto; flex: 1; padding: 2px 0; }
 
   /* MODALS */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; align-items: center; justify-content: center; padding: 24px; }
@@ -218,6 +218,11 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #4caf50; display: inline-block; margin-right: 4px; }
 
+  /* DAY SELECTION */
+  .day-cell.day-start { background: var(--cal1-light) !important; outline: 2px solid var(--cal1); outline-offset: -2px; }
+  .day-cell.drag-selected { background: var(--cal1-light) !important; outline: 1px solid var(--cal1); outline-offset: -1px; }
+  .days-grid { user-select: none; }
+
   @media (max-width: 700px) {
     .day-cell { min-height: 70px; padding: 4px; }
     .month-title { font-size: 18px; }
@@ -230,6 +235,8 @@
     .week-body { max-height: 400px; }
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>emailjs.init("nhrTEnqdPqJ9s6gkK");</script>
 </head>
 <body>
 
@@ -433,6 +440,9 @@
   let weekStart = getWeekStart(new Date());
   let events = [], selectedDate = null, selectedEventId = null, editingEventId = null;
   let pollInterval = null, currentUser = '', searchQuery = '';
+  let isDragging = false, dragStartDate = null, dragEndDate = null, dragMoved = false;
+  let selectedDates = [];
+  let clickStartDate = null; // for two-click selection
   let selectedColor = EVENT_COLORS[0];
   let attendees = [];
 
@@ -556,13 +566,20 @@
     else renderAgenda();
   }
 
+  function clearSelection() {
+    clickStartDate = null;
+    clearDragHighlight();
+  }
+
   function navPrev() {
+    clearSelection();
     if (currentView === 'month') { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1); renderMonth(); }
     else if (currentView === 'week') { weekStart = new Date(weekStart.getTime() - 7*86400000); renderWeek(); }
     else { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1); renderAgenda(); }
   }
 
   function navNext() {
+    clearSelection();
     if (currentView === 'month') { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1); renderMonth(); }
     else if (currentView === 'week') { weekStart = new Date(weekStart.getTime() + 7*86400000); renderWeek(); }
     else { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1); renderAgenda(); }
@@ -609,7 +626,11 @@
         const m = document.createElement('div'); m.className = 'more-events';
         m.textContent = '+' + (dayEvs.length-3) + ' more'; cell.appendChild(m);
       }
-      cell.onclick = () => openDayPanel(dateStr);
+      cell.dataset.date = dateStr;
+      cell.onmousedown = (e) => { if (e.button !== 0) return; startDrag(dateStr, e); };
+      cell.onmouseenter = () => { if (isDragging) updateDrag(dateStr); };
+      cell.onmouseup = () => { if (isDragging) { endDrag(); return; } };
+      cell.onclick = (e) => { handleDayClick(dateStr, e); };
       grid.appendChild(cell);
     }
   }
@@ -924,15 +945,20 @@
         if (!res.ok) throw new Error('Failed to update');
         await loadEvents();
       } else {
-        const res = await sbFetch('POST','events',payload);
-        if (!res.ok) throw new Error('Failed to save');
-        const [saved] = await res.json(); events.push(saved);
-        events.sort((a,b)=>a.date.localeCompare(b.date)||(a.time_start||'').localeCompare(b.time_start||''));
-        // Send email notifications to attendees with known emails
-        const emailList = attendees.filter(a=>a.email).map(a=>a.email);
-        if (emailList.length > 0) {
-          sendMeetingEmails(saved, emailList);
+        const datesToSave = selectedDates.length > 1 ? selectedDates : [selectedDate];
+        let lastSaved = null;
+        for (const d of datesToSave) {
+          const p = Object.assign({}, payload, { date: d });
+          const res = await sbFetch('POST','events',p);
+          if (!res.ok) throw new Error('Failed to save');
+          const [saved] = await res.json();
+          events.push(saved);
+          lastSaved = saved;
         }
+        events.sort((a,b)=>a.date.localeCompare(b.date)||(a.time_start||'').localeCompare(b.time_start||''));
+        const emailList = attendees.filter(a=>a.email).map(a=>a.email);
+        if (emailList.length > 0 && lastSaved) sendMeetingEmails(lastSaved, emailList);
+        selectedDates = [];
       }
       closeModal(); renderView();
     } catch(e) { alert('Error: '+e.message); }
@@ -1012,25 +1038,126 @@
   async function sendMeetingEmails(ev, emailList) {
     try {
       const calName = ev.calendar_id===1 ? cal1Name : cal2Name;
-      await fetch(supabaseUrl+'/functions/v1/send-meeting-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer '+supabaseKey,
-          'apikey': supabaseKey,
-        },
-        body: JSON.stringify({
+      const [y,m,d] = ev.date.split('-');
+      const SHORT_M = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
+      const dateStr = parseInt(d)+' '+SHORT_M[parseInt(m)-1]+' '+y;
+      let timeStr = ev.time_start ? ev.time_start.slice(0,5) : 'Не е наведено';
+      if (ev.time_start && ev.time_end) timeStr += ' – '+ev.time_end.slice(0,5);
+
+      for (const email of emailList) {
+        await emailjs.send('service_3vrwu5j', 'template_8uamrtq', {
+          to_email: email,
           title: ev.title,
-          date: ev.date,
-          time_start: ev.time_start,
-          time_end: ev.time_end,
-          notes: ev.notes,
-          creator: ev.creator,
-          attendee_emails: emailList,
+          date: dateStr,
+          time: timeStr,
+          creator: ev.creator || 'Непознат',
+          notes: ev.notes || '',
           calendar_name: calName,
-        })
-      });
+        });
+      }
     } catch(e) { console.error('Email error:', e); }
+  }
+
+  // ── DRAG & CLICK SELECTION ────────────────────────────────────────────────
+  function startDrag(dateStr, e) {
+    isDragging = true; dragMoved = false;
+    dragStartDate = dateStr; dragEndDate = dateStr;
+    e.preventDefault();
+  }
+
+  function updateDrag(dateStr) {
+    if (!isDragging) return;
+    dragMoved = true;
+    dragEndDate = dateStr;
+    highlightDragRange();
+  }
+
+  function endDrag() {
+    if (!isDragging) return;
+    isDragging = false;
+    if (!dragMoved) return; // let onclick handle single clicks
+    const dates = getDragDates();
+    clearDragHighlight();
+    clickStartDate = null;
+    if (dates.length === 1) {
+      openDayPanel(dates[0]);
+    } else {
+      openAddModalMultiDay(dates);
+    }
+  }
+
+  function handleDayClick(dateStr, e) {
+    if (dragMoved) { dragMoved = false; return; } // drag already handled
+
+    if (!clickStartDate) {
+      // First click — set start date
+      clickStartDate = dateStr;
+      clearDragHighlight();
+      // highlight start cell
+      document.querySelectorAll('#days-grid .day-cell[data-date]').forEach(c => {
+        c.classList.toggle('day-start', c.dataset.date === dateStr);
+      });
+    } else if (clickStartDate === dateStr) {
+      // Clicked same day — open day panel
+      clickStartDate = null;
+      clearDragHighlight();
+      openDayPanel(dateStr);
+    } else {
+      // Second click — open multi-day form
+      const allDates = Array.from(document.querySelectorAll('#days-grid .day-cell[data-date]')).map(c => c.dataset.date);
+      const i1 = allDates.indexOf(clickStartDate);
+      const i2 = allDates.indexOf(dateStr);
+      const start = Math.min(i1, i2), end = Math.max(i1, i2);
+      const dates = allDates.slice(start, end + 1);
+      clickStartDate = null;
+      clearDragHighlight();
+      if (dates.length === 1) openDayPanel(dates[0]);
+      else openAddModalMultiDay(dates);
+    }
+  }
+
+  function getDragDates() {
+    const cells = document.querySelectorAll('#days-grid .day-cell[data-date]');
+    const allDates = Array.from(cells).map(c => c.dataset.date).filter(Boolean);
+    const i1 = allDates.indexOf(dragStartDate);
+    const i2 = allDates.indexOf(dragEndDate);
+    if (i1 < 0 || i2 < 0) return [dragStartDate];
+    const start = Math.min(i1, i2), end = Math.max(i1, i2);
+    return allDates.slice(start, end + 1);
+  }
+
+  function highlightDragRange() {
+    const dates = new Set(getDragDates());
+    document.querySelectorAll('#days-grid .day-cell[data-date]').forEach(c => {
+      c.classList.toggle('drag-selected', dates.has(c.dataset.date));
+      c.classList.remove('day-start');
+    });
+  }
+
+  function clearDragHighlight() {
+    document.querySelectorAll('#days-grid .day-cell').forEach(c => {
+      c.classList.remove('drag-selected');
+      c.classList.remove('day-start');
+    });
+  }
+
+  function openAddModalMultiDay(dates) {
+    selectedDate = dates[0];
+    selectedDates = dates;
+    const fmt = (d) => { const [y,m,day] = d.split('-'); return SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(day); };
+    document.getElementById('modal-title').textContent = 'New Meeting';
+    document.getElementById('add-modal-date').textContent =
+      fmt(dates[0]) + ' – ' + fmt(dates[dates.length-1]) + ' (' + dates.length + ' days) · ' + (currentCal===1?cal1Name:cal2Name);
+    document.getElementById('event-title').value = '';
+    document.getElementById('event-start').value = '';
+    document.getElementById('event-end').value = '';
+    document.getElementById('event-notes').value = '';
+    selectedColor = currentCal===1 ? EVENT_COLORS[0] : EVENT_COLORS[1];
+    attendees = [];
+    buildColorSwatches(); renderAttendeeTags();
+    document.getElementById('save-btn').textContent = 'Save Meeting';
+    document.getElementById('add-modal').classList.add('open');
+    setTimeout(()=>document.getElementById('event-title').focus(),100);
   }
 
   // ── HELPERS ────────────────────────────────────────────────────────────────
@@ -1047,6 +1174,8 @@
   }
 
   // ── KEYBOARD ───────────────────────────────────────────────────────────────
+  document.addEventListener('mouseup', () => { if (isDragging) { endDrag(); } });
+
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'){closeModal();closeDetailModal();closeDayPanelDirect();clearSearch();}
     if(e.key==='Enter'&&document.getElementById('add-modal').classList.contains('open')&&document.activeElement.id!=='attendee-input')saveEvent();
