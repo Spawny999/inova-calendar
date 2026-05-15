@@ -913,7 +913,8 @@
     document.getElementById('add-modal-date').textContent = (currentCal===1?cal1Name:cal2Name);
     document.getElementById('event-title').value = editEv ? editEv.title : '';
     document.getElementById('event-date-start').value = editEv ? editEv.date : selectedDate;
-    document.getElementById('event-date-end').value = editEv ? editEv.date : (selectedDates.length > 1 ? selectedDates[selectedDates.length-1] : selectedDate);
+    document.getElementById('event-date-end').value = editEv ? editEv.date : selectedDate;
+    selectedDates = [selectedDate]; // always reset to single day
     document.getElementById('event-start').value = editEv ? (editEv.time_start||'') : timeStr;
     document.getElementById('event-end').value = editEv ? (editEv.time_end||'') : '';
     document.getElementById('event-notes').value = editEv ? (editEv.notes||'') : '';
