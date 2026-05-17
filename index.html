@@ -95,6 +95,14 @@
   .day-cell.today .day-num { background: var(--today); color: white; }
   .event-pill { font-size: 11px; font-weight: 500; padding: 3px 7px; border-radius: 4px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: opacity 0.15s; width: 100%; box-sizing: border-box; display: block; }
   .event-pill:hover { opacity: 0.75; }
+  #autocomplete-portal { position: fixed; z-index: 99999; }
+  .attendee-dropdown { background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); max-height: 200px; overflow-y: auto; }
+  .attendee-dropdown-item { padding: 10px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  .attendee-dropdown-item:last-child { border-bottom: none; }
+  .attendee-dropdown-item:hover, .attendee-dropdown-item.active { background: var(--bg); }
+  .attendee-dropdown-item strong { color: var(--text); }
+  .attendee-dropdown-item span { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+
   .more-events { font-size: 10px; color: var(--text-muted); font-weight: 500; padding: 2px 4px; }
   /* MULTI-DAY BARS */
   .event-bar { font-size: 11px; font-weight: 500; padding: 2px 6px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: opacity 0.15s; display: block; box-sizing: border-box; border-radius: 0; margin-left: -9px; width: calc(100% + 18px); }
@@ -396,7 +404,7 @@
       <div><label>Start time</label><input type="time" id="event-start"></div>
       <div><label>End time</label><input type="time" id="event-end"></div>
     </div>
-    <label>Attendees <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)">(press Enter or comma to add)</span></label>
+    <label>Attendees <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)">(type name, email, or pick from list)</span></label>
     <div class="attendee-tags" id="attendee-tags" onclick="document.getElementById('attendee-input').focus()">
       <input type="text" class="attendee-tag-input" id="attendee-input" placeholder="Type a name...">
     </div>
@@ -428,6 +436,8 @@
     </div>
   </div>
 </div>
+
+<div id="autocomplete-portal"></div>
 
 <!-- DAY PANEL -->
 <div class="day-panel-overlay" id="day-panel-overlay" onclick="closeDayPanel(event)">
@@ -859,60 +869,75 @@
 
   function setupAttendeeInput() {
     const input = document.getElementById('attendee-input');
+    const portal = document.getElementById('autocomplete-portal');
+    let activeIdx = -1;
 
-    // Create autocomplete dropdown
-    const dropdown = document.createElement('div');
-    dropdown.id = 'attendee-dropdown';
-    dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.15);z-index:9999;max-height:160px;overflow-y:auto;display:none;';
-    const attendeeWrap = document.getElementById('attendee-tags').parentElement;
-    attendeeWrap.style.position = 'relative';
-    attendeeWrap.appendChild(dropdown);
-
-    input.addEventListener('input', () => {
-      const q = input.value.trim().toLowerCase();
-      if (!q) { dropdown.style.display = 'none'; return; }
-      const matches = employees.filter(e =>
-        e.name.toLowerCase().includes(q) && !attendees.find(a => a.name === e.name)
-      ).slice(0, 6);
-      if (!matches.length) { dropdown.style.display = 'none'; return; }
-      dropdown.innerHTML = '';
-      matches.forEach(emp => {
+    function showDropdown(matches) {
+      portal.innerHTML = '';
+      if (!matches.length) return;
+      const rect = document.getElementById('attendee-tags').getBoundingClientRect();
+      const div = document.createElement('div');
+      div.className = 'attendee-dropdown';
+      div.style.cssText = 'position:fixed;top:'+(rect.bottom+4)+'px;left:'+rect.left+'px;width:'+rect.width+'px;';
+      matches.forEach((emp, i) => {
         const item = document.createElement('div');
-        item.style.cssText = 'padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background 0.1s;';
-        item.innerHTML = '<strong>' + escHtml(emp.name) + '</strong> <span style="color:var(--text-muted);font-size:11px;">' + escHtml(emp.email) + '</span>';
-        item.onmouseenter = () => item.style.background = 'var(--bg)';
-        item.onmouseleave = () => item.style.background = 'white';
+        item.className = 'attendee-dropdown-item';
+        item.innerHTML = '<strong>'+escHtml(emp.name)+'</strong><span>'+escHtml(emp.email)+'</span>';
         item.onmousedown = (e) => {
           e.preventDefault();
           addAttendeeTag(emp.name, emp.email);
           input.value = '';
-          dropdown.style.display = 'none';
+          portal.innerHTML = '';
+          activeIdx = -1;
         };
-        dropdown.appendChild(item);
+        div.appendChild(item);
       });
-      dropdown.style.display = 'block';
+      portal.appendChild(div);
+    }
+
+    function hideDropdown() { portal.innerHTML = ''; activeIdx = -1; }
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { hideDropdown(); return; }
+      const matches = employees.filter(e =>
+        (e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)) &&
+        !attendees.find(a => a.name === e.name)
+      ).slice(0, 6);
+      showDropdown(matches);
     });
 
     input.addEventListener('keydown', e => {
-      if (e.key === 'Escape') { dropdown.style.display = 'none'; }
+      const items = portal.querySelectorAll('.attendee-dropdown-item');
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx+1, items.length-1); items.forEach((el,i) => el.classList.toggle('active', i===activeIdx)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx-1, 0); items.forEach((el,i) => el.classList.toggle('active', i===activeIdx)); return; }
+      if (e.key === 'Escape') { hideDropdown(); return; }
       if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
         e.preventDefault();
-        // Try to match from employees first
-        addAttendeeTag(input.value.trim(), null); // no email unless selected from dropdown
+        if (activeIdx >= 0 && items[activeIdx]) {
+          items[activeIdx].onmousedown(e);
+          return;
+        }
+        const val = input.value.trim();
+        // If it looks like an email, use it as both name and email
+        if (val.includes('@')) {
+          const namePart = val.split('@')[0].replace(/[._]/g,' ').replace(/\w/g,c=>c.toUpperCase());
+          addAttendeeTag(namePart, val);
+        } else {
+          addAttendeeTag(val, null);
+        }
         input.value = '';
-        dropdown.style.display = 'none';
+        hideDropdown();
       }
       if (e.key === 'Backspace' && !input.value && attendees.length > 0) {
         removeAttendee(attendees.length-1);
       }
     });
 
-    input.addEventListener('blur', () => {
-      setTimeout(() => { dropdown.style.display = 'none'; }, 150);
-    });
+    input.addEventListener('blur', () => { setTimeout(hideDropdown, 150); });
   }
 
-  function addAttendeeTag(name, email) {
+    function addAttendeeTag(name, email) {
     if (!name || attendees.find(a => a.name === name)) return;
     attendees.push({ name, email });
     renderAttendeeTags();
