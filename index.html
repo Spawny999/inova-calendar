@@ -889,6 +889,7 @@
           input.value = '';
           portal.innerHTML = '';
           activeIdx = -1;
+          input.focus();
         };
         div.appendChild(item);
       });
@@ -928,6 +929,7 @@
         }
         input.value = '';
         hideDropdown();
+        input.focus();
       }
       if (e.key === 'Backspace' && !input.value && attendees.length > 0) {
         removeAttendee(attendees.length-1);
