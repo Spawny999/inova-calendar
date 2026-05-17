@@ -70,7 +70,6 @@
   .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .user-chip { display: flex; align-items: center; gap: 6px; padding: 5px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
   .user-dot { width: 18px; height: 18px; border-radius: 50%; background: var(--cal1); color: white; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
-  .settings-btn { background: none; border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-size: 12px; font-weight: 500; color: var(--text-muted); cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
   /* WRAPPER */
   .calendar-wrapper { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
@@ -295,7 +294,7 @@
 <!-- MAIN APP -->
 <div id="app">
   <header>
-    <div class="logo">📅 Agency</div>
+    <div class="logo">📅 INOVA</div>
     <div class="cal-tabs">
       <button class="cal-tab active-1" id="tab-1" onclick="switchCal(1)">Calendar 1</button>
       <button class="cal-tab" id="tab-2" onclick="switchCal(2)">Calendar 2</button>
@@ -316,7 +315,7 @@
         <span id="user-name-display"></span>
       </div>
       <span style="font-size:12px;color:var(--text-muted)"><span class="status-dot"></span>Live</span>
-      <button class="settings-btn" onclick="resetSetup()" title="Settings">⚙</button>
+
     </div>
   </header>
 
@@ -556,13 +555,7 @@
     const el = document.getElementById('setup-error'); el.textContent = msg; el.style.display = 'block';
   }
 
-  function resetSetup() {
-    if (!confirm('Reset settings? You will need to re-enter your Supabase credentials.')) return;
-    localStorage.removeItem('agency_cal_config');
-    clearInterval(pollInterval);
-    document.getElementById('app').style.display = 'none';
-    document.getElementById('setup-screen').style.display = 'flex';
-  }
+
 
   async function showApp() {
     document.getElementById('loading').style.display = 'none';
