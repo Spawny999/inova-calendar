@@ -161,7 +161,7 @@
   /* MODALS */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; align-items: center; justify-content: center; padding: 24px; }
   .modal-overlay.open { display: flex; }
-  .modal { background: var(--surface); border-radius: 16px; padding: 32px; width: 100%; max-width: 460px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp 0.2s ease; max-height: 90vh; overflow-y: auto; }
+  .modal { background: var(--surface); border-radius: 16px; padding: 32px; width: 100%; max-width: 460px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp 0.2s ease; max-height: 90vh; overflow-y: auto; overflow-x: visible; }
   @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   .modal h2 { font-family: 'DM Mono', monospace; font-size: 17px; font-weight: 500; margin-bottom: 6px; }
   .modal-date { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
@@ -863,9 +863,10 @@
     // Create autocomplete dropdown
     const dropdown = document.createElement('div');
     dropdown.id = 'attendee-dropdown';
-    dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.12);z-index:999;max-height:200px;overflow-y:auto;display:none;';
-    document.getElementById('attendee-tags').parentElement.style.position = 'relative';
-    document.getElementById('attendee-tags').parentElement.appendChild(dropdown);
+    dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.15);z-index:9999;max-height:160px;overflow-y:auto;display:none;';
+    const attendeeWrap = document.getElementById('attendee-tags').parentElement;
+    attendeeWrap.style.position = 'relative';
+    attendeeWrap.appendChild(dropdown);
 
     input.addEventListener('input', () => {
       const q = input.value.trim().toLowerCase();
@@ -897,10 +898,7 @@
       if ((e.key === 'Enter' || e.key === ',') && input.value.trim()) {
         e.preventDefault();
         // Try to match from employees first
-        const q = input.value.trim().toLowerCase();
-        const match = employees.find(emp => emp.name.toLowerCase() === q);
-        if (match) addAttendeeTag(match.name, match.email);
-        else addAttendeeTag(input.value.trim(), null);
+        addAttendeeTag(input.value.trim(), null); // no email unless selected from dropdown
         input.value = '';
         dropdown.style.display = 'none';
       }
