@@ -575,13 +575,13 @@
   function navPrev() {
     if (currentView === 'month') { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1); renderMonth(); }
     else if (currentView === 'week') { weekStart = new Date(weekStart.getTime() - 7*86400000); renderWeek(); }
-    else { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()-1, 1); renderAgenda(); }
+    else { currentDate = new Date(currentDate.getTime() - 86400000); renderAgenda(); }
   }
 
   function navNext() {
     if (currentView === 'month') { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1); renderMonth(); }
     else if (currentView === 'week') { weekStart = new Date(weekStart.getTime() + 7*86400000); renderWeek(); }
-    else { currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth()+1, 1); renderAgenda(); }
+    else { currentDate = new Date(currentDate.getTime() + 86400000); renderAgenda(); }
   }
 
   function navToday() {
@@ -736,36 +736,28 @@
 
   // ── AGENDA VIEW ────────────────────────────────────────────────────────────
   function renderAgenda() {
-    const year = currentDate.getFullYear(), month = currentDate.getMonth();
-    document.getElementById('nav-title').textContent = MONTHS[month] + ' ' + year;
     const todayStr = fmtDate(new Date());
+    const dateStr = fmtDate(currentDate);
+    const [y, m, d] = dateStr.split('-');
+    const dayName = new Date(parseInt(y), parseInt(m)-1, parseInt(d)).toLocaleDateString('en-US', {weekday:'long'});
+    document.getElementById('nav-title').textContent = dayName + ', ' + SHORT_MONTHS[parseInt(m)-1] + ' ' + parseInt(d) + ', ' + y;
     const list = document.getElementById('agenda-list'); list.innerHTML = '';
-    const monthEvs = events.filter(e => e.calendar_id === currentCal && e.date.startsWith(year+'-'+String(month+1).padStart(2,'0')));
-    if (monthEvs.length === 0) {
-      list.innerHTML = '<div class="agenda-empty">No meetings this month.</div>'; return;
+    const dayEvs = events.filter(e => e.calendar_id === currentCal && e.date === dateStr);
+    if (dayEvs.length === 0) {
+      list.innerHTML = '<div class="agenda-empty">No meetings today.</div>'; return;
     }
-    const byDay = {};
-    monthEvs.forEach(ev => { if (!byDay[ev.date]) byDay[ev.date] = []; byDay[ev.date].push(ev); });
-    Object.keys(byDay).sort().forEach(dateStr => {
-      const [y, m, d] = dateStr.split('-');
-      const dayName = new Date(parseInt(y), parseInt(m)-1, parseInt(d)).toLocaleDateString('en-US', {weekday:'long'});
-      const group = document.createElement('div'); group.className = 'agenda-day-group';
-      const isToday = dateStr === todayStr;
-      group.innerHTML = '<div class="agenda-day-header"><div class="agenda-day-date">'+SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(d)+'</div><div class="agenda-day-label'+(isToday?' today-label':'')+'">'+dayName+'</div><div class="agenda-divider"></div></div>';
-      byDay[dateStr].forEach(ev => {
-        const card = document.createElement('div'); card.className = 'agenda-event';
-        const timeStr = ev.time_start ? ev.time_start.slice(0,5) + (ev.time_end ? ' – '+ev.time_end.slice(0,5) : '') : 'All day';
-        const attendeeStr = ev.attendees ? ev.attendees.split(',').filter(Boolean).join(', ') : '';
-        card.innerHTML = '<div class="agenda-color-bar" style="background:'+(ev.color||EVENT_COLORS[0])+'"></div>' +
-          '<div class="agenda-event-content"><div class="agenda-event-title">'+escHtml(ev.title)+'</div>' +
-          '<div class="agenda-event-meta">🕐 '+timeStr+(ev.creator ? ' · 👤 '+escHtml(ev.creator) : '')+(attendeeStr ? '<br>👥 '+escHtml(attendeeStr) : '')+(ev.notes ? '<br>📝 '+escHtml(ev.notes) : '')+'</div></div>';
-        card.onclick = () => showEventDetail(ev);
-        group.appendChild(card);
-      });
-      list.appendChild(group);
+    dayEvs.forEach(ev => {
+      const card = document.createElement('div'); card.className = 'agenda-event';
+      const timeStr = ev.time_start ? ev.time_start.slice(0,5)+(ev.time_end?' - '+ev.time_end.slice(0,5):'') : 'All day';
+      const attendeeStr = ev.attendees ? ev.attendees.split(',').filter(Boolean).join(', ') : '';
+      card.innerHTML = '<div class="agenda-color-bar" style="background:'+(ev.color||EVENT_COLORS[0])+'"></div>'+
+        '<div class="agenda-event-content"><div class="agenda-event-title">'+escHtml(ev.title)+'</div>'+
+        '<div class="agenda-event-meta">'+timeStr+(ev.creator?' by '+escHtml(ev.creator):'')+(attendeeStr?'<br>'+escHtml(attendeeStr):'')+(ev.notes?'<br>'+escHtml(ev.notes):'')+
+        '</div></div>';
+      card.onclick = () => showEventDetail(ev);
+      list.appendChild(card);
     });
   }
-
   // ── SUPABASE ───────────────────────────────────────────────────────────────
   function sbFetch(method, path, body) {
     const opts = { method, headers: { 'apikey': supabaseKey, 'Authorization': 'Bearer '+supabaseKey, 'Content-Type': 'application/json', 'Prefer': method==='POST'?'return=representation':'' } };
