@@ -201,9 +201,10 @@
   /* DAY PANEL */
   .day-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; align-items: flex-start; justify-content: flex-end; }
   .day-panel-overlay.open { display: flex; }
-  .day-panel { background: var(--surface); width: 380px; max-width: 100%; height: 100vh; overflow-y: auto; box-shadow: -8px 0 40px rgba(0,0,0,0.12); padding: 32px 28px; animation: slideLeft 0.25s ease; }
+  .day-panel { background: var(--surface); width: 380px; max-width: 100%; height: 100vh; overflow-y: auto; overflow-x: hidden; box-shadow: -8px 0 40px rgba(0,0,0,0.12); padding: 32px 28px; animation: slideLeft 0.25s ease; display: flex; flex-direction: column; }
   @keyframes slideLeft { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-  .day-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .day-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-shrink: 0; }
+  #day-panel-events { overflow-y: auto; flex: 1; padding-bottom: 16px; }
   .day-panel-title { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; }
   .day-panel-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted); padding: 4px; line-height: 1; }
   .panel-event { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.15s; }
@@ -737,28 +738,49 @@
 
     days.forEach((d, i) => {
       const dateStr = fmtDate(d);
-      const col = document.createElement('div'); col.className = 'week-day-body';
-      col.style.position = 'relative';
+      const column = document.createElement('div'); column.className = 'week-day-body';
+      column.style.position = 'relative';
       for (let h = 0; h < 24; h++) {
         const cell = document.createElement('div'); cell.className = 'week-hour-cell';
         cell.onclick = () => { const t = (h<10?'0'+h:h)+':00'; openAddModalWithTime(dateStr, t); };
-        col.appendChild(cell);
+        column.appendChild(cell);
       }
       const timedEvs = events.filter(e => e.calendar_id === currentCal && e.date === dateStr && e.time_start);
-      timedEvs.forEach(ev => {
-        const [sh, sm] = ev.time_start.split(':').map(Number);
-        const startMin = sh*60 + (sm||0);
-        let endMin = startMin + 60;
+
+      // Calculate overlap columns (Google Calendar style)
+      const evWithMins = timedEvs.map(ev => {
+        const [sh,sm] = ev.time_start.split(':').map(Number);
+        const startMin = sh*60+(sm||0);
+        let endMin = startMin+60;
         if (ev.time_end) { const [eh,em] = ev.time_end.split(':').map(Number); endMin = eh*60+(em||0); }
+        return { ev, startMin, endMin, col: 0, totalCols: 1 };
+      });
+
+      // Assign columns to overlapping events
+      evWithMins.forEach((a, i) => {
+        const overlapping = evWithMins.filter((b, j) => j !== i && b.startMin < a.endMin && b.endMin > a.startMin);
+        if (overlapping.length === 0) { a.col = 0; a.totalCols = 1; return; }
+        const usedCols = overlapping.filter(b => b.col !== undefined).map(b => b.col);
+        let col = 0;
+        while (usedCols.includes(col)) col++;
+        a.col = col;
+        const allGroup = [a, ...overlapping];
+        const maxCol = Math.max(...allGroup.map(b => b.col)) + 1;
+        allGroup.forEach(b => b.totalCols = Math.max(b.totalCols || 1, maxCol));
+      });
+
+      evWithMins.forEach(({ ev, startMin, endMin, col: evCol, totalCols }) => {
         const top = (startMin / 60) * 48;
         const height = Math.max(((endMin - startMin) / 60) * 48, 20);
+        const widthPct = 100 / totalCols;
+        const leftPct = evCol * widthPct;
         const el = document.createElement('div'); el.className = 'week-event';
-        el.style.cssText = 'top:'+top+'px;height:'+height+'px;background:'+hexAlpha(ev.color||EVENT_COLORS[0],0.15)+';color:'+(ev.color||EVENT_COLORS[0])+';border-left:3px solid '+(ev.color||EVENT_COLORS[0]);
+        el.style.cssText = 'top:'+top+'px;height:'+height+'px;width:calc('+widthPct+'% - 3px);left:'+leftPct+'%;background:'+hexAlpha(ev.color||EVENT_COLORS[0],0.15)+';color:'+(ev.color||EVENT_COLORS[0])+';border-left:3px solid '+(ev.color||EVENT_COLORS[0]);
         el.textContent = ev.time_start.slice(0,5)+' '+ev.title;
         el.onclick = e => { e.stopPropagation(); showEventDetail(ev); };
-        col.appendChild(el);
+        column.appendChild(el);
       });
-      body.appendChild(col);
+      body.appendChild(column);
     });
   }
 
