@@ -1168,7 +1168,7 @@
   function openDayPanel(dateStr) {
     const [y,m,d] = dateStr.split('-');
     document.getElementById('day-panel-title').textContent = SHORT_MONTHS[parseInt(m)-1]+' '+parseInt(d)+', '+y;
-    const dayEvs = events.filter(e=>e.calendar_id===currentCal&&e.date===dateStr);
+    const dayEvs = events.filter(e=>{ if(e.calendar_id!==currentCal) return false; const evEnd = e.date_end||e.date; return e.date<=dateStr && evEnd>=dateStr; });
     const container = document.getElementById('day-panel-events'); container.innerHTML='';
     if (!dayEvs.length) container.innerHTML='<div class="panel-empty">No meetings yet.</div>';
     dayEvs.forEach(ev=>{
