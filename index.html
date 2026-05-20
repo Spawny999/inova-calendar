@@ -1239,6 +1239,21 @@
   });
   document.getElementById('user-name-input').addEventListener('keydown',e=>{if(e.key==='Enter')saveName();});
 
+  // Auto-reset to today exactly at midnight
+  function scheduleMidnightReset() {
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+    const msUntilMidnight = midnight - now;
+    setTimeout(() => {
+      currentDate = new Date();
+      weekStart = getWeekStart(new Date());
+      if (currentView === 'agenda') agendaPeriod = 'day';
+      renderView();
+      scheduleMidnightReset(); // schedule next day
+    }, msUntilMidnight);
+  }
+  scheduleMidnightReset();
+
   init();
 </script>
 </body>
