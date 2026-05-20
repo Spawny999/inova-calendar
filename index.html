@@ -802,14 +802,34 @@
     }
 
     document.getElementById('nav-title').textContent = title;
-    const rangeEvs = events.filter(e => e.calendar_id === currentCal && e.date >= fromStr && e.date <= toStr);
+    const rangeEvs = events.filter(e => {
+      if (e.calendar_id !== currentCal) return false;
+      const evEnd = e.date_end || e.date;
+      // Include if event overlaps with the period at all
+      return e.date <= toStr && evEnd >= fromStr;
+    });
 
     if (rangeEvs.length === 0) {
       list.innerHTML = '<div class="agenda-empty">No meetings in this period.</div>'; return;
     }
 
     const byDay = {};
-    rangeEvs.forEach(ev => { if (!byDay[ev.date]) byDay[ev.date] = []; byDay[ev.date].push(ev); });
+    rangeEvs.forEach(ev => {
+      const evEnd = ev.date_end || ev.date;
+      // For multi-day events, add to each day within the period
+      let cur = new Date(ev.date + 'T00:00:00');
+      const end = new Date(evEnd + 'T00:00:00');
+      const periodEnd = new Date(toStr + 'T00:00:00');
+      const periodStart = new Date(fromStr + 'T00:00:00');
+      while (cur <= end && cur <= periodEnd) {
+        if (cur >= periodStart) {
+          const d = fmtDate(cur);
+          if (!byDay[d]) byDay[d] = [];
+          byDay[d].push(ev);
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+    });
     Object.keys(byDay).sort().forEach(dateStr => {
       const [y, m, d] = dateStr.split('-');
       const dayName = new Date(parseInt(y),parseInt(m)-1,parseInt(d)).toLocaleDateString('en-US',{weekday:'long'});
