@@ -201,10 +201,10 @@
   /* DAY PANEL */
   .day-panel-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; align-items: flex-start; justify-content: flex-end; }
   .day-panel-overlay.open { display: flex; }
-  .day-panel { background: var(--surface); width: 380px; max-width: 100%; height: 100vh; overflow-y: auto; overflow-x: hidden; box-shadow: -8px 0 40px rgba(0,0,0,0.12); padding: 32px 28px; animation: slideLeft 0.25s ease; display: flex; flex-direction: column; }
+  .day-panel { background: var(--surface); width: 380px; max-width: 100%; height: 100vh; overflow-y: auto; overflow-x: hidden; box-shadow: -8px 0 40px rgba(0,0,0,0.12); padding: 32px 28px; animation: slideLeft 0.25s ease; }
   @keyframes slideLeft { from { transform: translateX(30px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   .day-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-shrink: 0; }
-  #day-panel-events { overflow-y: auto; flex: 1; padding-bottom: 16px; }
+  #day-panel-events { padding-bottom: 32px; }
   .day-panel-title { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; }
   .day-panel-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-muted); padding: 4px; line-height: 1; }
   .panel-event { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.15s; }
